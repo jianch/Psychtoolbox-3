@@ -153,13 +153,9 @@ void PsychHIDOSKbTriggerWait(int deviceIndex, int numScankeys, int* scanKeys)
             deviceIndex=deviceIndices[i];
         }
     }
-    deviceRecord=deviceRecords[i]; 
-#ifndef __LP64__
-    usage = deviceRecord->usage;
-#else
-    usage = IOHIDDevice_GetUsage(deviceRecord);
-#endif
+    deviceRecord=deviceRecords[i];
 
+    usage = IOHIDDevice_GetUsage(deviceRecord);
 	KeysUsagePage = ((usage == kHIDUsage_GD_Keyboard) || (usage == kHIDUsage_GD_Keypad)) ? kHIDPage_KeyboardOrKeypad : kHIDPage_Button;
 
     //Allocate and init out return arguments.

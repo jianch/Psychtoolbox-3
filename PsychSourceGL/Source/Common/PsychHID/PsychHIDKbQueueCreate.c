@@ -602,14 +602,7 @@ static void PsychHIDKbQueueCallbackFunction(void *target, IOReturn result, void 
 		// Cooked key code defaults to "unhandled", and stays that way for anything but keyboards:
 		evt.cookedEventCode = -1;
 		
-        // We only support .cookedEventCode mapping for the 64-Bit OSX Psychtoolbox, ie., for
-        // 64-Bit Octave and 64-Bit Matlab. Why? Because this code requires OSX version 10.5 or
-        // later and our 64-Bit PTB requires the same. The 32-Bit Matlab PTB still supports 10.4,
-        // on which this code would not work. But 32-Bit OSX is legacy and the only affected mode
-        // would be 32-Bit matlab -nojvm mode, so who cares?
-        #ifdef __LP64__
-
-		// For real keyboards we can compute cooked key codes:
+		// For real keyboards we can compute cooked key codes: Requires OSX 10.5 or later.
 		if (queueIsAKeyboard) {
 			// Keyboard(ish) device. We can handle this under some conditions.
 			// Init to a default of handled, but unmappable/ignored keycode:
@@ -688,8 +681,6 @@ static void PsychHIDKbQueueCallbackFunction(void *target, IOReturn result, void 
 			}
 		}
 
-        #endif
-        
 		pthread_mutex_lock(&psychHIDKbQueueMutex);
 
 		// Update records of first and latest key presses and releases
@@ -850,6 +841,7 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKe
 			// Put all appropriate elements into the dictionary and into the queue
 			HIDElement newElement;
 			CFIndex i;
+            SInt32 typeKey;
 			for (i=0; i<CFArrayGetCount(elements); i++)
 			{
 				CFNumberRef number;
@@ -858,14 +850,21 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKe
 				
 				if(!element) continue;
 				bzero(&newElement, sizeof(HIDElement));
-				//newElement.owner=hidDataRef;
+
+				// Get usage page and make sure it is a keyboard or keypad or something with buttons.
+				number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementTypeKey));
+				if (!number) continue;
+				CFNumberGetValue(number, kCFNumberSInt32Type, &typeKey);
+                if (typeKey == kIOHIDElementTypeInput_Button) printf("Index %i is a Button!\n", i);
+                if (typeKey == kIOHIDElementTypeInput_ScanCodes) printf("Index %i is a ScanCode!\n", i);
+                if (typeKey == kIOHIDElementTypeCollection) printf("Index %i is a Collection!\n", i);
 				
 				// Get usage page and make sure it is a keyboard or keypad or something with buttons.
 				number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementUsagePageKey));
 				if (!number) continue;
 				CFNumberGetValue(number, kCFNumberSInt32Type, &newElement.usagePage );
 				if((newElement.usagePage != kHIDPage_KeyboardOrKeypad) && (newElement.usagePage != kHIDPage_Button)) continue;
-
+                printf("--> Accepting as KbQueue element.\n");
 				// If at least one keyboard style device is detected, mark this queue as keyboard queue:
 				if (newElement.usagePage == kHIDPage_KeyboardOrKeypad) queueIsAKeyboard = TRUE;
 
