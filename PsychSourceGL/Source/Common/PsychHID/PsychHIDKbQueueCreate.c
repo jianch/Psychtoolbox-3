@@ -844,10 +844,63 @@ PsychError PsychHIDOSKbElementsAddRecursive(CFArrayRef elements, CFMutableDictio
     return(PsychError_none);
 }
 
-PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKeys)
+// Put element into the dictionary and into the queue:
+PsychError PsychHIDOSKbElementAdd(IOHIDElementRef element, CFMutableDictionaryRef hidElements, HIDDataRef hidDataRef)
+{
+	HRESULT result;
+    HIDElement newElement;
+    CFNumberRef number;
+    
+    memset(&newElement, 0, sizeof(HIDElement));
+    newElement.usagePage = IOHIDElementGetUsagePage(element);
+    newElement.usage     = IOHIDElementGetUsage(element);
+    
+    // If at least one keyboard style device is detected, mark this queue as keyboard queue:
+    if (newElement.usagePage == kHIDPage_KeyboardOrKeypad) queueIsAKeyboard = TRUE;
+    
+    // Avoid redundant assignment to same keycode:
+    if (thisKeyAssigned[newElement.usage - 1]) {
+        printf("--> Key %i Already assigned --> Skipping.\n", newElement.usage - 1);
+        return(PsychError_none);
+    }
+    printf("--> Accepting key %i as new KbQueue element%s.\n", newElement.usage - 1, (queueIsAKeyboard) ? " for a keyboard" : "");
+    
+    // Get cookie for element:
+    newElement.cookie = IOHIDElementGetCookie(element);
+    
+    // Put this element into the hidElements dictionary:
+    {
+        CFMutableDataRef newData = CFDataCreateMutable(kCFAllocatorDefault, sizeof(HIDElement));
+        if (!newData) PsychErrorExitMsg(PsychError_outofMemory, "Could not CFDataCreateMutable mutable newData element in keyboard queue setup!");
+        memcpy(CFDataGetMutableBytePtr(newData), &newElement, sizeof(HIDElement));
+        
+        number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &newElement.cookie);
+        if (!number) PsychErrorExitMsg(PsychError_outofMemory, "Could not CFNumberCreate cookie number in keyboard queue setup!");
+        
+        CFDictionarySetValue(hidElements, number, newData);
+        CFRelease(number);
+        CFRelease(newData);
+    }
+    
+    // Put the element cookie into the queue:
+    result = (*hidDataRef->hidQueueInterface)->addElement(hidDataRef->hidQueueInterface, newElement.cookie, 0);
+    if (kIOReturnSuccess != result) {
+        printf("PTB-ERROR: Could not addElement cookie %i to queue for element with usage %i!\n", newElement.cookie, newElement.usage - 1);
+        //PsychErrorExitMsg(PsychError_system, "Could not addElement cookie to hidQueueInterface in keyboard queue setup!");
+    }
+    else {
+        // Success! Mark as assigned:
+        thisKeyAssigned[newElement.usage - 1] = 1;
+    }
+
+    return(PsychError_none);
+}
+
+
+PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanList)
 {
 	pRecDevice			deviceRecord;
-	int					*psychHIDKbQueueKeyList;
+	//int					*psychHIDKbQueueKeyList;
 	long				KbDeviceUsagePages[NUMDEVICEUSAGES]= {kHIDPage_GenericDesktop, kHIDPage_GenericDesktop, kHIDPage_GenericDesktop, kHIDPage_GenericDesktop, kHIDPage_GenericDesktop, kHIDPage_GenericDesktop, kHIDPage_GenericDesktop};
 	long				KbDeviceUsages[NUMDEVICEUSAGES]={kHIDUsage_GD_Keyboard, kHIDUsage_GD_Keypad, kHIDUsage_GD_Mouse, kHIDUsage_GD_Pointer, kHIDUsage_GD_Joystick, kHIDUsage_GD_GamePad, kHIDUsage_GD_MultiAxisController};
 	int					numDeviceUsages=NUMDEVICEUSAGES;
@@ -856,11 +909,11 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKe
 	HRESULT result;
 	IOHIDDeviceInterface122** interface=NULL;	// This requires Mac OS X 10.3 or higher
 
-	if(scanKeys && (numScankeys != 256)) {
+	if(scanList && (numScankeys != 256)) {
 		PsychErrorExitMsg(PsychError_user, "Second argument to KbQueueCreate must be a vector with 256 elements.");
 	}
 
-    psychHIDKbQueueKeyList = scanKeys;
+    //psychHIDKbQueueKeyList = scanList;
     
 	PsychHIDVerifyInit();
 	
@@ -931,16 +984,18 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKe
 	}
 	hidDataRef->hidDeviceInterface=interface;
 	
-	// Create the queue
-	result = (*hidDataRef->hidQueueInterface)->create(hidDataRef->hidQueueInterface, 0, 30);	// The second number is the number of events can be stored before events are lost
-												// Empirically, the lost events are the later events, despite my having seen claims to the contrary
-												// Also, empirically, I get 11 events when specifying 8 ???
+	// Create the queue:
+    // The second number is the number of events can be stored before events are lost.
+    // Empirically, the lost events are the later events, despite my having seen claims to the contrary
+    // Also, empirically, I get 11 events when specifying 8 ???
+	result = (*hidDataRef->hidQueueInterface)->create(hidDataRef->hidQueueInterface, 0, 30);
 	if (kIOReturnSuccess != result){
 		(*hidDataRef->hidQueueInterface)->Release(hidDataRef->hidQueueInterface);
 		free(hidDataRef);
 		hidDataRef=NULL;
 		PsychErrorExitMsg(PsychError_system, "Failed to create event queue for detecting key press.");
 	}
+
 	{
 		// Prepare dictionary then add appropriate device elements to dictionary and queue
 		CFArrayRef elements;
@@ -952,29 +1007,83 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanKe
 			hidDataRef=NULL;
 			PsychErrorExitMsg(PsychError_system, "Failed to create Dictionary for queue.");
 		}
-		{
-			// Get a listing of all elements associated with the device
-			// copyMatchinfElements requires IOHIDDeviceInterface122, thus Mac OS X 10.3 or higher
-			// elements would have to be obtained directly from IORegistry for 10.2 or earlier
-			IOReturn success=(*interface)->copyMatchingElements(interface, NULL, &elements);
-			
-			if(!elements){
-				CFRelease(hidElements);
-				(*hidDataRef->hidQueueInterface)->dispose(hidDataRef->hidQueueInterface);
-				(*hidDataRef->hidQueueInterface)->Release(hidDataRef->hidQueueInterface);
-				free(hidDataRef);
-				hidDataRef=NULL;
-				PsychErrorExitMsg(PsychError_user, "No elements found on device.");
-			}
-		}
-        
-        // Add 'elements' to our dictionary 'hidElements' and also their coockies to the hidqueue
-        // accessible via 'hidDataRef', filtering unwanted keys via 'psychHIDKbQueueKeyList'.
-        // This function is recursive, so it can handle elements which are themselves collections
-        // of elements - A property found on the latest OSX versions with some of the latest Apple
+
+// This didn't work on Natalia's MacBookAir 2013 with OSX 10.9:
+//		{
+//			// Get a listing of all elements associated with the device
+//			// copyMatchinfElements requires IOHIDDeviceInterface122, thus Mac OS X 10.3 or higher
+//			// elements would have to be obtained directly from IORegistry for 10.2 or earlier
+//			IOReturn success=(*interface)->copyMatchingElements(interface, NULL, &elements);
+//			
+//			if(!elements){
+//				CFRelease(hidElements);
+//				(*hidDataRef->hidQueueInterface)->dispose(hidDataRef->hidQueueInterface);
+//				(*hidDataRef->hidQueueInterface)->Release(hidDataRef->hidQueueInterface);
+//				free(hidDataRef);
+//				hidDataRef=NULL;
+//				PsychErrorExitMsg(PsychError_user, "No elements found on device.");
+//			}
+//		}
+//        
+//        // Add 'elements' to our dictionary 'hidElements' and also their coockies to the hidqueue
+//        // accessible via 'hidDataRef', filtering unwanted keys via 'psychHIDKbQueueKeyList'.
+//        // This function is recursive, so it can handle elements which are themselves collections
+//        // of elements - A property found on the latest OSX versions with some of the latest Apple
+//        // hardware, e.g., late 2013 MacBookAir and OSX 10.9:
+//        PsychHIDOSKbElementsAddRecursive(elements, hidElements, hidDataRef, psychHIDKbQueueKeyList);
+//        CFRelease(elements);
+
+        // Add deviceRecord's elements to our dictionary 'hidElements' and also their coockies to the hidqueue
+        // accessible via 'hidDataRef', filtering unwanted keys via 'scanList'.
+        // This code is almost identical to the enumeration code in PsychHIDKbCheck, to make sure we get
+        // matching performance and behaviour and hopefully that it works on the latest problematic Apple
         // hardware, e.g., late 2013 MacBookAir and OSX 10.9:
-        PsychHIDOSKbElementsAddRecursive(elements, hidElements, hidDataRef, psychHIDKbQueueKeyList);
-        CFRelease(elements);
+        {
+            uint32_t usage, usagePage;
+            pRecElement currentElement, lastElement = NULL;
+            
+            // Step through the elements of the device and add matching ones:
+            for (currentElement = HIDGetFirstDeviceElement(deviceRecord, kHIDElementTypeInput | kHIDElementTypeCollection);
+                (currentElement != NULL) && (currentElement != lastElement);
+                currentElement = HIDGetNextDeviceElement(currentElement, kHIDElementTypeInput | kHIDElementTypeCollection))
+            {
+                // Keep track of last queried element:
+                lastElement = currentElement;
+                
+                usage     = IOHIDElementGetUsage(currentElement);
+                usagePage = IOHIDElementGetUsagePage(currentElement);
+                printf("PTB-DEBUG: [KbQueueCreate]: ce %p page %d usage: %d isArray: %d\n", currentElement, usagePage, usage, IOHIDElementIsArray(currentElement));
+                
+                if (IOHIDElementGetType(currentElement) == kIOHIDElementTypeCollection) {
+                    CFArrayRef children = IOHIDElementGetChildren(currentElement);
+                    if (!children) continue;
+                    
+                    CFIndex idx, cnt = CFArrayGetCount(children);
+                    for (idx = 0; idx < cnt; idx++ ) {
+                        IOHIDElementRef tIOHIDElementRef = (IOHIDElementRef) CFArrayGetValueAtIndex(children, idx);
+                        if (tIOHIDElementRef && ((IOHIDElementGetType(tIOHIDElementRef) == kIOHIDElementTypeInput_Button) ||
+                                                 (IOHIDElementGetType(tIOHIDElementRef) == kIOHIDElementTypeInput_ScanCodes))) {
+                            usage = IOHIDElementGetUsage(tIOHIDElementRef);
+                            if ((usage <= 256) && (usage >= 1) && ( (scanList == NULL) || (scanList[usage - 1] > 0) )) {
+                                // Add it for use in keyboard queue:
+                                PsychHIDOSKbElementAdd(tIOHIDElementRef, hidElements, hidDataRef);
+                            }
+                        }
+                    }
+                    
+                    // Done with this currentElement, which was a collection of buttons/keys.
+                    // Iterate to next currentElement:
+                    continue;
+                }
+                
+                // Classic path for non-collection elements:
+                if(((usagePage == kHIDPage_KeyboardOrKeypad) || (usagePage == kHIDPage_Button)) && (usage <= 256) && (usage >= 1) &&
+                   ( (scanList == NULL) || (scanList[usage - 1] > 0) ) ) {
+                    // Add it for use in keyboard queue:
+                    PsychHIDOSKbElementAdd(currentElement, hidElements, hidDataRef);
+                }
+            }
+        }
 
 		// Make sure that the queue and dictionary aren't empty
 		if (CFDictionaryGetCount(hidElements) == 0){
