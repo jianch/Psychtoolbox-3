@@ -718,136 +718,136 @@ static void PsychHIDKbQueueCallbackFunction(void *target, IOReturn result, void 
 	}
 }
 
-// Put all appropriate elements into the dictionary and into the queue. Do recursive calls into subelements if needed:
-PsychError PsychHIDOSKbElementsAddRecursive(CFArrayRef elements, CFMutableDictionaryRef hidElements, HIDDataRef hidDataRef, int *psychHIDKbQueueKeyList)
-{
-	HRESULT result;
-    HIDElement newElement;
-    CFIndex i, idx, cnt;
-    CFArrayRef children;
-    SInt32 typeKey;
-    static int recursive = 0;
-    
-    // Increase recursion level at enter of function:
-    recursive++;
-    
-    // Iterate over all elements and add them - sometimes recursively:
-    for (i = 0; i < CFArrayGetCount(elements); i++) {
-        CFNumberRef number;
-        CFDictionaryRef element = CFArrayGetValueAtIndex(elements, i);
-        CFTypeRef object;
-        
-        if (!element) continue;
-        memset(&newElement, 0, sizeof(HIDElement));
-        
-        // Get usage page and make sure it is a keyboard or keypad or something with buttons:
-        number = (CFNumberRef) CFDictionaryGetValue(element, CFSTR(kIOHIDElementTypeKey));
-        if (!number) continue;
-        CFNumberGetValue(number, kCFNumberSInt32Type, &typeKey);
-        
-        if (typeKey == kIOHIDElementTypeInput_Button) printf("%i: Index %i is a Button!\n", recursive, i);
-        if (typeKey == kIOHIDElementTypeInput_ScanCodes) printf("%i: Index %i is a ScanCode!\n", recursive, i);
-        if (typeKey == kIOHIDElementTypeInput_Misc) printf("%i: Index %i is a Misc input!\n", recursive, i);
-        if (typeKey == kIOHIDElementTypeOutput) printf("%i: Index %i is a output!\n", recursive, i);
-        if (typeKey == kIOHIDElementTypeFeature) printf("%i: Index %i is a feature!\n", recursive, i);
-
-        // Is this element actually a collection of more elements?
-        if (typeKey == kIOHIDElementTypeCollection) {
-            printf("%i: Index %i is a Collection!\n", recursive, i);
-            
-            // Get the collection which is hopefully a IOHIDElement:
-            object = CFDictionaryGetValue(element, CFSTR(kIOHIDElementKey));
-            
-            // Make sure the collection is actually a valid CFArray, so we can handle it. Skip otherwise:
-            if (object && (CFGetTypeID(object) == CFArrayGetTypeID())) {
-                // Assign the CFArray with the child elements:
-                children = (CFArrayRef) object;
-                cnt = CFArrayGetCount(children);
-                printf("%i: Stored in a CFArray with %i elements. Parsing recursively...\n", recursive, (int) cnt);
-                
-                // Call ourselves recursively to process/filter/add the children to the keyboard queue:
-                PsychHIDOSKbElementsAddRecursive(children, hidElements, hidDataRef, psychHIDKbQueueKeyList);
-            }
-            
-            // Done with this currentElement, which was a collection of buttons/keys.
-            continue;
-        }
-        
-        // If we get here then we actually got a single element to filter and possibly add to
-        // the keyboard queue, after filtering out invalid codes for us:
-        
-        // Get usage page:
-        number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementUsagePageKey));
-        if (!number) continue;
-        CFNumberGetValue(number, kCFNumberSInt32Type, &newElement.usagePage );
-        
-        // Get usage:
-        number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementUsageKey));
-        if (!number) continue;
-        CFNumberGetValue(number, kCFNumberSInt32Type, &newElement.usage );
-        
-        printf("%i: UsagePage %i : Usage value %i\n", recursive, newElement.usagePage, newElement.usage);
-
-        // Make sure it is a keyboard or keypad or something with buttons:
-        if((newElement.usagePage != kHIDPage_KeyboardOrKeypad) && (newElement.usagePage != kHIDPage_Button)) continue;
-        
-        // If at least one keyboard style device is detected, mark this queue as keyboard queue:
-        if (newElement.usagePage == kHIDPage_KeyboardOrKeypad) queueIsAKeyboard = TRUE;
-        
-        // Make sure it is in range 1 - 256:
-        if (newElement.usage < 1 || newElement.usage > 256) continue;
-        
-        // Verify that it is on the queue key list (if specified).
-        // Zero value indicates that key corresponding to position should be ignored
-        if(psychHIDKbQueueKeyList){
-            if(psychHIDKbQueueKeyList[newElement.usage - 1]==0) continue;
-        }
-
-        // Avoid redundant assignment to same keycode:
-        if (thisKeyAssigned[newElement.usage - 1]) {
-            printf("%i: --> Key %i Already assigned --> Skipping.\n", recursive);
-            continue;
-        }
-
-        printf("%i: --> Accepting as new KbQueue element%s.\n", recursive, (queueIsAKeyboard) ? " for a keyboard" : "");
-        
-        // Get cookie
-        number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementCookieKey));
-        if (!number) continue;
-        CFNumberGetValue(number, kCFNumberIntType, &(newElement.cookie) );
-        
-        {
-            // Put this element into the hidElements Dictionary
-            CFMutableDataRef newData = CFDataCreateMutable(kCFAllocatorDefault, sizeof(HIDElement));
-            if (!newData) continue;
-            bcopy(&newElement, CFDataGetMutableBytePtr(newData), sizeof(HIDElement));
-            
-            number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &newElement.cookie);
-            if (!number) continue;
-            
-            CFDictionarySetValue(hidElements, number, newData);
-            CFRelease(number);
-            CFRelease(newData);
-        }
-        
-        // Put the element cookie into the queue
-        result = (*hidDataRef->hidQueueInterface)->addElement(hidDataRef->hidQueueInterface, newElement.cookie, 0);
-        if (kIOReturnSuccess != result) continue;
-        
-        // Success! Mark as assigned:
-        thisKeyAssigned[newElement.usage - 1] = 1;
-    }
-    
-    // Decrease recursion level at exit of function:
-    recursive--;
-    
-    return(PsychError_none);
-}
+//// Put all appropriate elements into the dictionary and into the queue. Do recursive calls into subelements if needed:
+//PsychError PsychHIDOSKbElementsAddRecursive(CFArrayRef elements, CFMutableDictionaryRef hidElements, HIDDataRef hidDataRef, int *psychHIDKbQueueKeyList)
+//{
+//	HRESULT result;
+//    HIDElement newElement;
+//    CFIndex i, idx, cnt;
+//    CFArrayRef children;
+//    SInt32 typeKey;
+//    static int recursive = 0;
+//    
+//    // Increase recursion level at enter of function:
+//    recursive++;
+//    
+//    // Iterate over all elements and add them - sometimes recursively:
+//    for (i = 0; i < CFArrayGetCount(elements); i++) {
+//        CFNumberRef number;
+//        CFDictionaryRef element = CFArrayGetValueAtIndex(elements, i);
+//        CFTypeRef object;
+//        
+//        if (!element) continue;
+//        memset(&newElement, 0, sizeof(HIDElement));
+//        
+//        // Get usage page and make sure it is a keyboard or keypad or something with buttons:
+//        number = (CFNumberRef) CFDictionaryGetValue(element, CFSTR(kIOHIDElementTypeKey));
+//        if (!number) continue;
+//        CFNumberGetValue(number, kCFNumberSInt32Type, &typeKey);
+//        
+//        if (typeKey == kIOHIDElementTypeInput_Button) printf("%i: Index %i is a Button!\n", recursive, i);
+//        if (typeKey == kIOHIDElementTypeInput_ScanCodes) printf("%i: Index %i is a ScanCode!\n", recursive, i);
+//        if (typeKey == kIOHIDElementTypeInput_Misc) printf("%i: Index %i is a Misc input!\n", recursive, i);
+//        if (typeKey == kIOHIDElementTypeOutput) printf("%i: Index %i is a output!\n", recursive, i);
+//        if (typeKey == kIOHIDElementTypeFeature) printf("%i: Index %i is a feature!\n", recursive, i);
+//
+//        // Is this element actually a collection of more elements?
+//        if (typeKey == kIOHIDElementTypeCollection) {
+//            printf("%i: Index %i is a Collection!\n", recursive, i);
+//            
+//            // Get the collection which is hopefully a IOHIDElement:
+//            object = CFDictionaryGetValue(element, CFSTR(kIOHIDElementKey));
+//            
+//            // Make sure the collection is actually a valid CFArray, so we can handle it. Skip otherwise:
+//            if (object && (CFGetTypeID(object) == CFArrayGetTypeID())) {
+//                // Assign the CFArray with the child elements:
+//                children = (CFArrayRef) object;
+//                cnt = CFArrayGetCount(children);
+//                printf("%i: Stored in a CFArray with %i elements. Parsing recursively...\n", recursive, (int) cnt);
+//                
+//                // Call ourselves recursively to process/filter/add the children to the keyboard queue:
+//                PsychHIDOSKbElementsAddRecursive(children, hidElements, hidDataRef, psychHIDKbQueueKeyList);
+//            }
+//            
+//            // Done with this currentElement, which was a collection of buttons/keys.
+//            continue;
+//        }
+//        
+//        // If we get here then we actually got a single element to filter and possibly add to
+//        // the keyboard queue, after filtering out invalid codes for us:
+//        
+//        // Get usage page:
+//        number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementUsagePageKey));
+//        if (!number) continue;
+//        CFNumberGetValue(number, kCFNumberSInt32Type, &newElement.usagePage );
+//        
+//        // Get usage:
+//        number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementUsageKey));
+//        if (!number) continue;
+//        CFNumberGetValue(number, kCFNumberSInt32Type, &newElement.usage );
+//        
+//        printf("%i: UsagePage %i : Usage value %i\n", recursive, newElement.usagePage, newElement.usage);
+//
+//        // Make sure it is a keyboard or keypad or something with buttons:
+//        if((newElement.usagePage != kHIDPage_KeyboardOrKeypad) && (newElement.usagePage != kHIDPage_Button)) continue;
+//        
+//        // If at least one keyboard style device is detected, mark this queue as keyboard queue:
+//        if (newElement.usagePage == kHIDPage_KeyboardOrKeypad) queueIsAKeyboard = TRUE;
+//        
+//        // Make sure it is in range 1 - 256:
+//        if (newElement.usage < 1 || newElement.usage > 256) continue;
+//        
+//        // Verify that it is on the queue key list (if specified).
+//        // Zero value indicates that key corresponding to position should be ignored
+//        if(psychHIDKbQueueKeyList){
+//            if(psychHIDKbQueueKeyList[newElement.usage - 1]==0) continue;
+//        }
+//
+//        // Avoid redundant assignment to same keycode:
+//        if (thisKeyAssigned[newElement.usage - 1]) {
+//            printf("%i: --> Key %i Already assigned --> Skipping.\n", recursive);
+//            continue;
+//        }
+//
+//        printf("%i: --> Accepting as new KbQueue element%s.\n", recursive, (queueIsAKeyboard) ? " for a keyboard" : "");
+//        
+//        // Get cookie
+//        number = (CFNumberRef)CFDictionaryGetValue(element, CFSTR(kIOHIDElementCookieKey));
+//        if (!number) continue;
+//        CFNumberGetValue(number, kCFNumberIntType, &(newElement.cookie) );
+//        
+//        {
+//            // Put this element into the hidElements Dictionary
+//            CFMutableDataRef newData = CFDataCreateMutable(kCFAllocatorDefault, sizeof(HIDElement));
+//            if (!newData) continue;
+//            bcopy(&newElement, CFDataGetMutableBytePtr(newData), sizeof(HIDElement));
+//            
+//            number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &newElement.cookie);
+//            if (!number) continue;
+//            
+//            CFDictionarySetValue(hidElements, number, newData);
+//            CFRelease(number);
+//            CFRelease(newData);
+//        }
+//        
+//        // Put the element cookie into the queue
+//        result = (*hidDataRef->hidQueueInterface)->addElement(hidDataRef->hidQueueInterface, newElement.cookie, 0);
+//        if (kIOReturnSuccess != result) continue;
+//        
+//        // Success! Mark as assigned:
+//        thisKeyAssigned[newElement.usage - 1] = 1;
+//    }
+//    
+//    // Decrease recursion level at exit of function:
+//    recursive--;
+//    
+//    return(PsychError_none);
+//}
 
 // Put element into the dictionary and into the queue:
 PsychError PsychHIDOSKbElementAdd(IOHIDElementRef element, CFMutableDictionaryRef hidElements, HIDDataRef hidDataRef)
 {
-	HRESULT result;
+	IOReturn result;
     HIDElement newElement;
     CFNumberRef number;
     
@@ -860,10 +860,9 @@ PsychError PsychHIDOSKbElementAdd(IOHIDElementRef element, CFMutableDictionaryRe
     
     // Avoid redundant assignment to same keycode:
     if (thisKeyAssigned[newElement.usage - 1]) {
-        printf("--> Key %i Already assigned --> Skipping.\n", newElement.usage - 1);
+        if (!getenv("PSYCHHID_SHUTUP")) printf("--> Key %i Already assigned --> Skipping.\n", newElement.usage - 1);
         return(PsychError_none);
     }
-    printf("--> Accepting key %i as new KbQueue element%s.\n", newElement.usage - 1, (queueIsAKeyboard) ? " for a keyboard" : "");
     
     // Get cookie for element:
     newElement.cookie = IOHIDElementGetCookie(element);
@@ -881,12 +880,17 @@ PsychError PsychHIDOSKbElementAdd(IOHIDElementRef element, CFMutableDictionaryRe
         CFRelease(number);
         CFRelease(newData);
     }
+
+    if (!getenv("PSYCHHID_SHUTUP")) {
+        printf("--> Accepting key %i as new KbQueue element%s. Cookie %i\n", newElement.usage - 1, (queueIsAKeyboard) ? " for a keyboard" : "", newElement.cookie);
+    }
     
     // Put the element cookie into the queue:
     result = (*hidDataRef->hidQueueInterface)->addElement(hidDataRef->hidQueueInterface, newElement.cookie, 0);
     if (kIOReturnSuccess != result) {
-        printf("PTB-ERROR: Could not addElement cookie %i to queue for element with usage %i!\n", newElement.cookie, newElement.usage - 1);
-        //PsychErrorExitMsg(PsychError_system, "Could not addElement cookie to hidQueueInterface in keyboard queue setup!");
+        if (!getenv("PSYCHHID_SHUTUP")) {
+            printf("PTB-ERROR: Could not addElement cookie %i to queue for element with key %i! [IOKit error %x]\n", newElement.cookie, newElement.usage - 1, result);
+        }
     }
     else {
         // Success! Mark as assigned:
@@ -1008,31 +1012,6 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanLi
 			PsychErrorExitMsg(PsychError_system, "Failed to create Dictionary for queue.");
 		}
 
-// This didn't work on Natalia's MacBookAir 2013 with OSX 10.9:
-//		{
-//			// Get a listing of all elements associated with the device
-//			// copyMatchinfElements requires IOHIDDeviceInterface122, thus Mac OS X 10.3 or higher
-//			// elements would have to be obtained directly from IORegistry for 10.2 or earlier
-//			IOReturn success=(*interface)->copyMatchingElements(interface, NULL, &elements);
-//			
-//			if(!elements){
-//				CFRelease(hidElements);
-//				(*hidDataRef->hidQueueInterface)->dispose(hidDataRef->hidQueueInterface);
-//				(*hidDataRef->hidQueueInterface)->Release(hidDataRef->hidQueueInterface);
-//				free(hidDataRef);
-//				hidDataRef=NULL;
-//				PsychErrorExitMsg(PsychError_user, "No elements found on device.");
-//			}
-//		}
-//        
-//        // Add 'elements' to our dictionary 'hidElements' and also their coockies to the hidqueue
-//        // accessible via 'hidDataRef', filtering unwanted keys via 'psychHIDKbQueueKeyList'.
-//        // This function is recursive, so it can handle elements which are themselves collections
-//        // of elements - A property found on the latest OSX versions with some of the latest Apple
-//        // hardware, e.g., late 2013 MacBookAir and OSX 10.9:
-//        PsychHIDOSKbElementsAddRecursive(elements, hidElements, hidDataRef, psychHIDKbQueueKeyList);
-//        CFRelease(elements);
-
         // Add deviceRecord's elements to our dictionary 'hidElements' and also their coockies to the hidqueue
         // accessible via 'hidDataRef', filtering unwanted keys via 'scanList'.
         // This code is almost identical to the enumeration code in PsychHIDKbCheck, to make sure we get
@@ -1052,7 +1031,9 @@ PsychError PsychHIDOSKbQueueCreate(int deviceIndex, int numScankeys, int* scanLi
                 
                 usage     = IOHIDElementGetUsage(currentElement);
                 usagePage = IOHIDElementGetUsagePage(currentElement);
-                printf("PTB-DEBUG: [KbQueueCreate]: ce %p page %d usage: %d isArray: %d\n", currentElement, usagePage, usage, IOHIDElementIsArray(currentElement));
+                if (!getenv("PSYCHHID_SHUTUP")) {
+                    printf("PTB-DEBUG: [KbQueueCreate]: ce %p page %d usage: %d isArray: %d\n", currentElement, usagePage, usage, IOHIDElementIsArray(currentElement));
+                }
                 
                 if (IOHIDElementGetType(currentElement) == kIOHIDElementTypeCollection) {
                     CFArrayRef children = IOHIDElementGetChildren(currentElement);
