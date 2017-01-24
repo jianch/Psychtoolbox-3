@@ -95,7 +95,7 @@
 % Get it at: http://mxcl.github.com/homebrew
 %
 % Once Homebrew is installed, one first needs to "brew install automake",
-% and "brew install autoconfig", and potentially cmake before one can
+% and "brew install autoconf", and potentially cmake before one can
 % "brew install libfreenect".
 %
 % If you want to also use the Kinect for Windows, instead of only the
